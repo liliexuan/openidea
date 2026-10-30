@@ -1,0 +1,42 @@
+# OpenIDEA CNB 自动发版流水线
+#
+# 触发：推送 tag（如 v0.1.28）时自动执行，产出 Linux 安装包并发布 Release。
+#   git tag v0.1.28 && git push cnb v0.1.28
+#
+# 构建逻辑参考上游 .github/workflows/release.yml 的 Linux 分支。
+# 产物：src-tauri/target/release/bundle/ 下的 .deb / .AppImage / .rpm
+#   上传为 CNB Release 附件，可直接下载。
+#
+# 说明：
+#   * tag 名即版本，由 CNB 内置变量 $CNB_BRANCH 提供。
+#   * CNB 云构建为 Linux 容器，仅能产出 Linux 安装包；
+#     Windows/macOS 安装包需在本机构建后用 cnb CLI 上传（见 scripts/publish-cnb-release.sh）。
+$:
+  tag_push:
+    - stages:
+        # 1) 在统一环境里编译 Linux 安装包（参考上游 Linux 构建命令）
+        - name: Build Linux bundles
+          image: docker.cnb.cool/bring/environment/allinone:latest
+          script:
+            - bash scripts/cnb-build-linux.sh
+
+        # 2) 生成变更日志
+        - name: Changelog
+          image: cnbcool/changelog:latest
+          settings:
+            latestChangeLogTarget: LATEST_CHANGELOG.md
+
+        # 3) 上传安装包为 Release 附件
+        - name: Upload bundles
+          image: cnbcool/attachments:latest
+          settings:
+            attachments:
+              - "./src-tauri/target/release/bundle/"
+
+        # 4) 创建/更新 Release（tag_push 自动取 tag 名）
+        - name: Publish Release
+          type: git:release
+          options:
+            title: OpenIDEA $CNB_BRANCH
+            descriptionFromFile: LATEST_CHANGELOG.md
+            latest: "true"
